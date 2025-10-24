@@ -67,7 +67,7 @@ app.post('/auth/register', async (req, res) => {
     return res.status(400).json({ error: "All fields are required" });
   }
 
-  const validRoles = ["student", "lecturer", "principal_lecturer", "program_leader"];
+  const validRoles = ["student", "lecturer", "principal_lecturer", "program_leader", "admin"];
   if (!validRoles.includes(role)) {
     return res.status(400).json({ error: "Invalid role" });
   }
@@ -1002,8 +1002,6 @@ app.post('/program-reports/generate', authenticateToken, requireRole(['program_l
 // === HEALTH CHECK ===
 app.get('/db-status', async (req, res) => {
   try {
-
-    
     await pool.query('SELECT 1');
     res.json({ status: '✅ Database connection successful!' });
   } catch (err) {
@@ -1031,7 +1029,40 @@ const startServer = async () => {
     await pool.query('SELECT 1');
     console.log('✅ Database connection successful!');
     
-    // Create courses table if it doesn't exist (without updated_at to avoid errors)
+    // Create tables in correct order to handle foreign key dependencies
+    
+    // 1. Create users table first (referenced by many tables)
+    try {
+      await pool.execute(`
+        CREATE TABLE IF NOT EXISTS users (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          email VARCHAR(255) NOT NULL UNIQUE,
+          password VARCHAR(255) NOT NULL,
+          role ENUM('student', 'lecturer', 'principal_lecturer', 'program_leader', 'admin') NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      console.log('✅ Users table ready');
+    } catch (err) {
+      console.log('Users table already exists or error:', err.message);
+    }
+
+    // 2. Create faculties table (referenced by classes)
+    try {
+      await pool.execute(`
+        CREATE TABLE IF NOT EXISTS faculties (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      console.log('✅ Faculties table ready');
+    } catch (err) {
+      console.log('Faculties table already exists or error:', err.message);
+    }
+
+    // 3. Create courses table (references users)
     try {
       await pool.execute(`
         CREATE TABLE IF NOT EXISTS courses (
@@ -1048,7 +1079,7 @@ const startServer = async () => {
       console.log('Courses table already exists or error:', err.message);
     }
 
-    // Create other essential tables if they don't exist
+    // 4. Create classes table (references faculties)
     try {
       await pool.execute(`
         CREATE TABLE IF NOT EXISTS classes (
@@ -1067,6 +1098,7 @@ const startServer = async () => {
       console.log('Classes table already exists or error:', err.message);
     }
 
+    // 5. Create lectures table (references classes, courses, users)
     try {
       await pool.execute(`
         CREATE TABLE IF NOT EXISTS lectures (
@@ -1091,6 +1123,7 @@ const startServer = async () => {
       console.log('Lectures table already exists or error:', err.message);
     }
 
+    // 6. Create lecturer_assignments table (references users, classes, courses)
     try {
       await pool.execute(`
         CREATE TABLE IF NOT EXISTS lecturer_assignments (
@@ -1110,6 +1143,7 @@ const startServer = async () => {
       console.log('Lecturer assignments table already exists or error:', err.message);
     }
 
+    // 7. Create feedback table (references lectures, users)
     try {
       await pool.execute(`
         CREATE TABLE IF NOT EXISTS feedback (
@@ -1127,7 +1161,7 @@ const startServer = async () => {
       console.log('Feedback table already exists or error:', err.message);
     }
 
-    // Check if ratings table exists and has correct structure
+    // 8. Create ratings table (references lectures, users)
     try {
       await pool.execute(`
         CREATE TABLE IF NOT EXISTS ratings (
@@ -1144,6 +1178,32 @@ const startServer = async () => {
       console.log('✅ Ratings table ready');
     } catch (err) {
       console.log('Ratings table already exists or error:', err.message);
+    }
+
+    // Add some sample data if tables are empty
+    try {
+      // Check if users table is empty and add a default admin user
+      const [users] = await pool.execute('SELECT COUNT(*) as count FROM users');
+      if (users[0].count === 0) {
+        const hashedPassword = await bcrypt.hash('admin123', 10);
+        await pool.execute(
+          'INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
+          ['Admin User', 'admin@university.com', hashedPassword, 'admin']
+        );
+        console.log('✅ Default admin user created');
+      }
+
+      // Check if faculties table is empty and add sample faculties
+      const [faculties] = await pool.execute('SELECT COUNT(*) as count FROM faculties');
+      if (faculties[0].count === 0) {
+        await pool.execute(
+          'INSERT INTO faculties (name) VALUES (?), (?), (?)',
+          ['Computer Science', 'Engineering', 'Business Administration']
+        );
+        console.log('✅ Sample faculties created');
+      }
+    } catch (err) {
+      console.log('Sample data creation skipped or error:', err.message);
     }
 
     app.listen(PORT, () => {
