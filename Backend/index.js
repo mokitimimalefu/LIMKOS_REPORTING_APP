@@ -13,7 +13,7 @@ const app = express();
 const pool = mysql.createPool({
   host:'gateway01.ap-southeast-1.prod.aws.tidbcloud.com',
   user:'HMzs6wphHZAAKKb.root',
-  password: 't3wGMvr0RyHjUqLM',
+  password: 'aIWYGf8yJbSLRRpe',
   database: 'test',
   waitForConnections: true,
   connectionLimit:10,
