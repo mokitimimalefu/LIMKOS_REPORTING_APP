@@ -1008,6 +1008,8 @@ app.post('/program-reports/generate', authenticateToken, requireRole(['program_l
 // === HEALTH CHECK ===
 app.get('/db-status', async (req, res) => {
   try {
+
+    
     await pool.query('SELECT 1');
     res.json({ status: '✅ Database connection successful!' });
   } catch (err) {
